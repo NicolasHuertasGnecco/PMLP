@@ -1,0 +1,133 @@
+---
+title: "Practical Machine Learning Project"
+author: "Nicolás Huertas"
+date: "6/5/2017"
+output: html_document
+---
+
+##Purpose  
+The intention of this project is to generate a predicting model algorithm that is able to classify how the person perform the excercise from 5 different possible ways A, B, C, D, and E for this we have a training data set available [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and a test data set available [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) there is also more information about the project  [here]( http://groupware.les.inf.puc-rio.br/har.)   
+```{r, echo=FALSE,warning=FALSE,message=FALSE,cache=FALSE}
+library(caret)
+library(ggplot2)
+
+```
+
+##Data cleaning  
+```{r data cleaning, echo =F, cache= T}
+
+training<-download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv","training.csv")
+testing<-download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv","testing.csv")
+training<-read.csv("training.csv")
+testing<-read.csv("testing.csv")
+classe<-training$classe
+```
+So first we observe thatt the training set has `r ncol(training)` variables, that mean `r 159` predictors for the variable `r "classe"`, the training set has `r nrow(training)` observations. while the test set has `r ncol(testing)` and `r nrow(testing)`
+now we proceed to change the data sets
+We are going to get the data only from the sensors and instead of imputing the data due to the missing values are all missing the missing values will be removed the variables we are going to use are shown below
+```{r data cleaning2.0, echo =T, cache= T, tidy=TRUE}
+filter<-grep("belt|forearm|arm|dumbbell",names(training))
+training<-training[,filter]
+testing<-testing[,filter]
+nafilter<-colSums(is.na(training))==0
+training<-training[,nafilter]
+testing<- testing[,nafilter]
+filter<-grep("kurtosis|skewness",names(training))
+training<-training[,-filter]
+testing<-testing[,-filter]
+names(training)
+```
+
+##Exploratory data analysis
+First we evaluate if there  variables with almost zero variance and are not good
+```{r data cleaning3.0, echo =T, cache= T, tidy=TRUE}
+zero.var = nearZeroVar(training, saveMetrics=TRUE)
+zero.var
+```
+as observe in the analysis there are a couple of predictors that have almost zero variance so they will be excluded from the analysis
+```{r data cleaning4.0, echo =T, cache= T, tidy=TRUE}
+filter<-grep("max|min|amplitude",names(training))
+training<-training[,-filter]
+testing<-testing[,-filter]
+names(training)
+```
+Now we proceed to plot the outcome classe vs some of the predictors 
+```{r plot,echo=F, cache=T}
+featurePlot(x = training[, 1:5], 
+            y = classe, 
+            plot = "pairs",
+            ## Add a key at the top
+            auto.key = list(columns = 5))
+featurePlot(x = training[, 6:10], 
+            y = classe, 
+            plot = "pairs",
+            ## Add a key at the top
+            auto.key = list(columns = 5))
+```
+
+
+
+
+There is no clear pattern according to this graphs to generate a simple logistic regression no further plota here made due to computational time taken
+
+##Model creation
+1. **Reproductibility**
+````{r seed}
+training<-cbind(training,classe)
+set.seed(12345)
+inTraining <- createDataPartition(training$classe, p = .75, list=FALSE)
+trainingSub <- training[inTraining,]
+testingSub <- training[-inTraining,]
+```
+*to be able to evaluate the results we re partinioned the data into tsest and train*
+
+2. **Cross Validation**
+```{r model,cache=T,message=FALSE}
+fitControl <- trainControl(method = "cv",
+                           number = 10,
+                           allowParallel = TRUE)
+```
+*this is the cros validation configuration that is going to be used*
+```{r,cache=T, echo=F,message=F,warning=F,tidy=TRUE}
+
+
+x<-trainingSub[,-53]
+y<-trainingSub[,53]
+    # If not, set up the parallel clusters.  
+    require(parallel)
+    require(doParallel)
+    cl <- makeCluster(detectCores() - 1)
+    registerDoParallel(cl)
+    
+    randomFmodel <- train(x,y, method = "rf", data = trainingSub, trControl = fitControl)
+   
+    
+    stopCluster(cl)
+    registerDoSEQ()
+ 
+    
+
+```
+3. **Accuracy**
+```{r acc, cache=T}
+
+y<-testingSub[,53]
+x<-testingSub[,-53]
+p<-predict(randomFmodel,x)
+confusionMatrix(p,y)
+```
+As we observe the accuracy is 99% 
+** we expect the put of sample error to be a litlle higher**
+
+4. **QUIZ**
+```{r acc2.0, cache=T,results="hide"}
+
+
+x<-testing
+p<-predict(randomFmodel,x)
+p
+```
+*Reulst not showed due to HONOR CODE*
+
+##Conclusions
+Now we can classify the way a person is performing the activity with a 99% accuracy more or less to do this we cleaned the data set we were given eliminating missing values and finding variables that had almost zero variance next we tried to visualize the data to find patterns, no patterns were found so we proceed to elaborate a **Random Forest** model that has the capability of classificating the type of exercise into the five categories A, B, C, D ,E
